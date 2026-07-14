@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/Users/tsumakov/.nvm/versions/node/v26.0.0/bin/npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--output-dir",
+        ".playwright-mcp",
+        "--output-mode",
+        "file"
+      ]
+    }
+  }
+}
