@@ -1,13 +1,20 @@
 
-# Playwright
+# Dependencies
 node_modules/
+
+# Environment & secrets
+.env
+
+# Playwright artifacts
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-/test_template.md/
-/mcp-server.log/
-/nvmrc/
-.env/
 .playwright-mcp/
+
+# Logs
+mcp-server.log
+
+# OS
+.DS_Store
