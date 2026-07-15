@@ -7,7 +7,6 @@ node_modules/
 /playwright/.cache/
 /playwright/.auth/
 /.playwright-mcp/
-/.cursor/
 /test_template.md/
 /mcp-server.log/
 /nvmrc/
