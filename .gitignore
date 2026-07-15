@@ -13,9 +13,5 @@ node_modules/
 /nvmrc/
 /test_template.md/
 /test-results/
-
-
-
-.env
-.playwright-mcp/
-.cursor/
+/.env/
+/.playwright-mcp/
