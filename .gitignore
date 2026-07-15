@@ -6,11 +6,8 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-/.playwright-mcp/
 /test_template.md/
 /mcp-server.log/
 /nvmrc/
-/test_template.md/
-/test-results/
-/.env/
-/.playwright-mcp/
+.env/
+.playwright-mcp/
