@@ -1,4 +1,4 @@
-# Prompt Template "Test Plan"
+# Prompt Template "Test Plan" (from Block 2)
 ## Role
 You are a senior QA engineer reviewing the feature described below.
 ## Task

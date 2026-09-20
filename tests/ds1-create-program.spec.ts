@@ -1,8 +1,16 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const BASE_URL = process.env.DIDAXIS_URL ?? 'https://test.didaxis.studio';
 const LOGIN_URL = `${BASE_URL}/login`;
 const PROGRAMS_URL = `${BASE_URL}/programs`;
+
+/** Exact values from DS-1 Jira acceptance criteria */
+const JIRA_PROGRAM_NAME = 'Web Development 2026';
+const JIRA_PROGRAM_DESCRIPTION = 'Full-stack web development program';
 
 function uniqueName(base: string): string {
   return `${base} ${Date.now()}`;
@@ -16,10 +24,10 @@ function requireEnv(name: 'DIDAXIS_EMAIL' | 'DIDAXIS_PASSWORD'): string {
   return value;
 }
 
-async function login(page: Page): Promise<void> {
+async function login(page: Page, email?: string, password?: string): Promise<void> {
   await page.goto(LOGIN_URL);
-  await page.getByLabel('Email').fill(requireEnv('DIDAXIS_EMAIL'));
-  await page.getByLabel('Password').fill(requireEnv('DIDAXIS_PASSWORD'));
+  await page.getByLabel('Email').fill(email ?? requireEnv('DIDAXIS_EMAIL'));
+  await page.getByLabel('Password').fill(password ?? requireEnv('DIDAXIS_PASSWORD'));
   await page.getByRole('button', { name: 'Sign In' }).click();
   await page.waitForURL((url) => !url.pathname.includes('/login'));
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
@@ -27,13 +35,7 @@ async function login(page: Page): Promise<void> {
 
 async function goToPrograms(page: Page): Promise<void> {
   await page.goto(PROGRAMS_URL);
-  await expect(page.getByRole('button', { name: 'New Program' })).toBeVisible();
-}
-
-async function openNewProgramModal(page: Page): Promise<void> {
-  await goToPrograms(page);
-  await page.getByRole('button', { name: 'New Program' }).click();
-  await expect(page.getByLabel('Program Name')).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ New Program' })).toBeVisible();
 }
 
 function programModal(page: Page): Locator {
@@ -42,9 +44,21 @@ function programModal(page: Page): Locator {
   });
 }
 
+function createButton(page: Page): Locator {
+  return programModal(page).getByRole('button', { name: 'Create', exact: true });
+}
+
 function programRow(page: Page, name: string, description?: string): Locator {
-  const row = page.getByRole('row').filter({ hasText: name });
+  const row = page.getByRole('row').filter({
+    has: page.getByText(name, { exact: true }),
+  });
   return description ? row.filter({ hasText: description }) : row;
+}
+
+async function openNewProgramModal(page: Page): Promise<void> {
+  await goToPrograms(page);
+  await page.getByRole('button', { name: '+ New Program' }).click();
+  await expect(page.getByLabel('Program Name')).toBeVisible();
 }
 
 async function fillProgramForm(
@@ -60,7 +74,7 @@ async function fillProgramForm(
 }
 
 async function submitCreate(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Create' }).click();
+  await createButton(page).click();
 }
 
 async function createProgram(
@@ -83,35 +97,60 @@ test.beforeEach(async ({ page }) => {
   await login(page);
 });
 
-test('TC-001: program creation form is displayed from Programs page', async ({ page }) => {
-  await goToPrograms(page);
-  await page.getByRole('button', { name: '+ New Program' }).click();
+// ---------------------------------------------------------------------------
+// DS-1 Jira Acceptance Criteria — strict requirements, no bypasses
+// Source: https://legionqaschool.atlassian.net/browse/DS-1
+// ---------------------------------------------------------------------------
 
-  await expect(page.getByLabel('Program Name')).toBeVisible();
-  await expect(page.getByLabel('Description')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create' })).toBeVisible();
+test.describe('DS-1 Jira Acceptance Criteria', () => {
+  test('AC-1: Navigate to program creation form', async ({ page }) => {
+    // Given I am logged in as admin
+    // When I navigate to the Programs page
+    await goToPrograms(page);
+    // And I click "+ New Program"
+    await page.getByRole('button', { name: '+ New Program' }).click();
+    // Then I see the program creation form with fields: Program Name, Description
+    await expect(page.getByLabel('Program Name')).toBeVisible();
+    await expect(page.getByLabel('Description')).toBeVisible();
+  });
+
+  test('AC-2: Successfully create a program', async ({ page }) => {
+    // Given I am on the program creation form
+    await openNewProgramModal(page);
+    const rowsBefore = await programRow(
+      page,
+      JIRA_PROGRAM_NAME,
+      JIRA_PROGRAM_DESCRIPTION,
+    ).count();
+    // When I fill in Program Name with "Web Development 2026"
+    // And I fill in Description with "Full-stack web development program"
+    await fillProgramForm(page, {
+      name: JIRA_PROGRAM_NAME,
+      description: JIRA_PROGRAM_DESCRIPTION,
+    });
+    // And I click Create
+    await submitCreate(page);
+    // Then the modal closes
+    await expect(programModal(page)).not.toBeVisible();
+    // And the program list shows "Web Development 2026"
+    await expect(
+      programRow(page, JIRA_PROGRAM_NAME, JIRA_PROGRAM_DESCRIPTION),
+    ).toHaveCount(rowsBefore + 1);
+  });
+
+  test('AC-3: Validation prevents empty program name', async ({ page }) => {
+    // Given I am on the program creation form
+    await openNewProgramModal(page);
+    // When I leave the Program Name field empty
+    await expect(page.getByLabel('Program Name')).toHaveValue('');
+    // Then the Create button is disabled
+    await expect(createButton(page)).toBeDisabled();
+  });
 });
 
-test('TC-002: valid program is created and appears in the program list', async ({ page }) => {
-  const programName = uniqueName('Web Development 2026');
-  const description = 'Full-stack web development program';
-
-  await openNewProgramModal(page);
-  await fillProgramForm(page, { name: programName, description });
-  await submitCreate(page);
-
-  await expect(programModal(page)).not.toBeVisible();
-  await expect(programRow(page, programName, description)).toBeVisible();
-  await expect(page.getByRole('alert')).not.toBeVisible();
-});
-
-test('TC-003: Create button is disabled when Program Name is empty', async ({ page }) => {
-  await openNewProgramModal(page);
-
-  await expect(page.getByLabel('Program Name')).toHaveValue('');
-  await expect(page.getByRole('button', { name: 'Create' })).toBeDisabled();
-  await expect(programModal(page)).toBeVisible();
-});
+// ---------------------------------------------------------------------------
+// Extended coverage — Confluence specs; failures indicate bugs under DS-1
+// ---------------------------------------------------------------------------
 
 test('TC-004: program can be created with Program Name only (Description empty)', async ({
   page,
@@ -126,7 +165,7 @@ test('TC-004: program can be created with Program Name only (Description empty)'
   await expect(programRow(page, programName)).toBeVisible();
 });
 
-test('TC-005: program is not created when Program Name contains only whitespace', async ({
+test('TC-006: program is not created when Program Name contains only whitespace', async ({
   page,
 }) => {
   await openNewProgramModal(page);
@@ -135,13 +174,11 @@ test('TC-005: program is not created when Program Name contains only whitespace'
     description: 'Introductory course track',
   });
 
-  const createButton = page.getByRole('button', { name: 'Create' });
-  await expect(createButton).toBeDisabled();
-
+  await expect(createButton(page)).toBeDisabled();
   await expect(programModal(page)).toBeVisible();
 });
 
-test('TC-006: duplicate program name is not allowed', async ({ page }) => {
+test('TC-007: duplicate program name is not allowed', async ({ page }) => {
   const programName = uniqueName('Web Development 2026');
 
   await createProgram(page, programName, 'Initial program');
@@ -157,7 +194,7 @@ test('TC-006: duplicate program name is not allowed', async ({ page }) => {
   await expect(programRow(page, programName)).toHaveCount(1);
 });
 
-test('TC-007: canceling the form does not create a program', async ({ page }) => {
+test('TC-008: canceling the form does not create a program', async ({ page }) => {
   const programName = uniqueName('Temporary Program');
 
   await openNewProgramModal(page);
@@ -165,121 +202,46 @@ test('TC-007: canceling the form does not create a program', async ({ page }) =>
     name: programName,
     description: 'Should not be saved',
   });
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await programModal(page).getByRole('button', { name: 'Cancel' }).click();
 
   await expect(programModal(page)).not.toBeVisible();
   await expect(programRow(page, programName)).not.toBeVisible();
 });
 
-/*
-test('TC-008: non-admin user cannot access program creation', async ({ page }) => {
-  const nonAdminEmail = process.env.DIDAXIS_NON_ADMIN_EMAIL;
-  const nonAdminPassword = process.env.DIDAXIS_NON_ADMIN_PASSWORD;
-
-  test.skip(
-    !nonAdminEmail || !nonAdminPassword,
-    'Set DIDAXIS_NON_ADMIN_EMAIL and DIDAXIS_NON_ADMIN_PASSWORD to run this test',
-  );
-
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await page.waitForURL((url) => url.pathname.includes('/login'));
-
-  await page.getByLabel('Email').fill(nonAdminEmail!);
-  await page.getByLabel('Password').fill(nonAdminPassword!);
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  await page.waitForURL((url) => !url.pathname.includes('/login'));
-  await goToPrograms(page);
-
-  await expect(page.getByRole('button', { name: 'New Program' })).not.toBeVisible();
-  await expect(page.getByLabel('Program Name')).not.toBeVisible();
-});
-*/
-
-test('TC-010: Program Name at maximum allowed length', async ({ page }) => {
+test('TC-012: Program Name exceeding maximum length is rejected', async ({ page }) => {
   const suffix = String(Date.now());
-  const programName = `${'M'.repeat(255 - suffix.length)}${suffix}`;
-  const description = 'Maximum length boundary test';
-
-  await openNewProgramModal(page);
-  await fillProgramForm(page, { name: programName, description });
-  await submitCreate(page);
-
-  await expect(programModal(page)).not.toBeVisible();
-  await expect(programRow(page, programName)).toBeVisible();
-});
-
-test('TC-011: Program Name exceeding maximum length is rejected', async ({ page }) => {
-  const suffix = String(Date.now());
-  const programName = `${'X'.repeat(256 - suffix.length)}${suffix}`;
+  const programName = `${'X'.repeat(101 - suffix.length)}${suffix}`;
   const description = 'Over max length test';
 
   await openNewProgramModal(page);
   await fillProgramForm(page, { name: programName, description });
+  await submitCreate(page);
 
-  const createButton = page.getByRole('button', { name: 'Create' });
-  if (await createButton.isEnabled()) {
-    await createButton.click();
-  }
-
-  const validationError = programModal(page).getByText(/too long|maximum|255|character/i);
-  const modalStillOpen = await programModal(page).isVisible();
-
-  expect(modalStillOpen || (await validationError.isVisible())).toBeTruthy();
+  await expect(programModal(page)).toBeVisible();
   await expect(programRow(page, programName)).not.toBeVisible();
 });
 
-test('TC-012: special characters in Program Name are handled correctly', async ({ page }) => {
-  const programName = uniqueName('C++ & AI/ML (2026)');
-  const description = 'Special characters in name';
-
-  await openNewProgramModal(page);
-  await fillProgramForm(page, { name: programName, description });
-  await submitCreate(page);
-
-  await expect(programModal(page)).not.toBeVisible();
-  await expect(programRow(page, programName)).toBeVisible();
-});
-
-test('TC-013: Unicode and emoji in Program Name are handled correctly', async ({ page }) => {
-  const programName = uniqueName('日本語プログラム 🎓');
-  const description = 'Unicode and emoji support test';
-
-  await openNewProgramModal(page);
-  await fillProgramForm(page, { name: programName, description });
-  await submitCreate(page);
-
-  await expect(programModal(page)).not.toBeVisible();
-  await expect(programRow(page, programName)).toBeVisible();
-});
-
-test('TC-014: leading and trailing spaces in Program Name are trimmed', async ({ page }) => {
-  const trimmedName = uniqueName('Cloud Computing 2026');
-  const programName = `  ${trimmedName}  `;
-  const description = 'Trim whitespace test';
-
-  await openNewProgramModal(page);
-  await fillProgramForm(page, { name: programName, description });
-  await submitCreate(page);
-
-  await expect(programModal(page)).not.toBeVisible();
-  await expect(programRow(page, trimmedName, description)).toBeVisible();
-});
-
-test('TC-015: very long Description is handled correctly', async ({ page }) => {
+test('TC-017: Description exceeding maximum length (501 characters) is rejected', async ({
+  page,
+}) => {
   const programName = uniqueName('Cybersecurity Bootcamp');
-  const description = 'D'.repeat(2000);
+  const description = 'D'.repeat(501);
 
   await openNewProgramModal(page);
   await fillProgramForm(page, { name: programName, description });
   await submitCreate(page);
 
-  const programInList = programRow(page, programName, description);
+  await expect(programModal(page)).toBeVisible();
+  await expect(programRow(page, programName)).not.toBeVisible();
+});
 
-  try {
-    await expect(programInList).toBeVisible({ timeout: 10_000 });
-    await expect(programModal(page)).not.toBeVisible();
-  } catch {
-    await expect(programModal(page)).toBeVisible();
-    await expect(programInList).not.toBeVisible();
-  }
+test('TC-018: double-clicking Create creates only one program', async ({ page }) => {
+  const programName = uniqueName('Double Click Guard');
+
+  await openNewProgramModal(page);
+  await fillProgramForm(page, { name: programName });
+  await createButton(page).dblclick();
+  await page.waitForTimeout(1500);
+
+  await expect(programRow(page, programName)).toHaveCount(1);
 });

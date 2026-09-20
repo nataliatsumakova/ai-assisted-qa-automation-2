@@ -1,4 +1,63 @@
-# DS-2 — Ticket Output: Test Cases for Create New Academic Program
+# DS-1 — Ticket Output: Test Cases for Create New Academic Program
+
+**Jira:** [DS-1](https://legionqaschool.atlassian.net/browse/DS-1) — Create new academic program  
+**Environment:** https://test.didaxis.studio  
+**Confluence:** [Architecture Overview](https://legionqaschool.atlassian.net/wiki/spaces/DS/pages/233013249/Architecture+Overview), Program Setup — Field Definitions, Validation Rules, UI Behavior  
+**Last verified:** 2026-09-07 — tests aligned strictly to Jira ACs; failures logged as DS-1 sub-tasks
+
+## Test policy
+
+- **Jira ACs are strict requirements.** Tests must not bypass failures (`test.fail`, `test.skip` for known bugs).
+- If the app does not meet an AC, the test **fails** and a **sub-task** is filed under [DS-1](https://legionqaschool.atlassian.net/browse/DS-1).
+- Extended tests (Confluence) follow the same rule — no bypasses.
+
+## Jira bugs logged (2026-09-07)
+
+| Sub-task | Test | AC / requirement | Status |
+|---|---|---|---|
+| [DS-216](https://legionqaschool.atlassian.net/browse/DS-216) | AC-2 | Single Create adds multiple rows | Open |
+| [DS-217](https://legionqaschool.atlassian.net/browse/DS-217) | TC-018 | Double-click Create creates duplicates | Open |
+
+Evidence screenshots: `evidence/DS-1/`
+
+## Confluence — Architecture Overview (summary)
+
+Didaxis Studio uses a **three-layer architecture** separating curriculum intent from schedule and student workload:
+
+| Layer | Purpose | Example |
+|---|---|---|
+| Layer 1 — Session Templates | Curriculum structure without dates | Lecture: Introduction to Java |
+| Layer 2 — Scheduled Sessions | Calendar entries with `source` (MANUAL \| GENERATED \| TEMPLATE) and `status` (LOCKED \| PLANNED) | Sep 8 — Java Lecture — Room 301 |
+| Layer 3 — Assignments | Student deliverables with assigned/due dates and estimated hours | Lab Report due Sep 15 |
+
+**Key invariants:** Calendar is the live data source; MANUAL/LOCKED sessions are immovable anchors; validation runs after every mutation (debounced 500 ms); generator is deterministic.
+
+Programs created via DS-1 are the top-level container that feeds this architecture (semesters → courses → session templates).
+
+## Jira Acceptance Criteria
+
+```gherkin
+Scenario: Navigate to program creation form
+  Given I am logged in as admin
+  When I navigate to the Programs page
+  And I click "+ New Program"
+  Then I see the program creation form with fields: Program Name, Description
+
+Scenario: Successfully create a program
+  Given I am on the program creation form
+  When I fill in Program Name with "Web Development 2026"
+  And I fill in Description with "Full-stack web development program"
+  And I click Create
+  Then the modal closes
+  And the program list shows "Web Development 2026"
+
+Scenario: Validation prevents empty program name
+  Given I am on the program creation form
+  When I leave the Program Name field empty
+  Then the Create button is disabled
+```
+
+---
 
 ## Positive Flows
 
@@ -11,13 +70,20 @@
 - User has permission to create programs
 
 **Steps**
-1. Navigate to the Programs page
+1. Navigate to `/programs`
 2. Click **+ New Program**
 
 **Expected result**
-- Program creation form is displayed
-- **Program Name** field is visible
-- **Description** field is visible
+- Page heading **Programs** with subtitle **Manage academic programs and semesters**
+- **+ New Program** button visible in header
+- Program table with column header **Program** (name + description preview per row)
+- Semester panel placeholder: **Select a program to manage semesters**
+- **New Program** modal (`role="dialog"`) opens with heading **New Program**
+- **Program Name \*** field visible (placeholder: `e.g. Computer Science BSc`)
+- **Description** field visible (placeholder: `Brief description`)
+- **Create** button visible and disabled while name is empty
+- **Cancel** button visible
+- Collapsible **▸ Show AI Generation Config** toggle present
 
 **Gherkin**
 ```gherkin
@@ -26,8 +92,11 @@ Feature: Create new academic program
   Scenario: Navigate to program creation form
     Given I am logged in as admin
     When I navigate to the Programs page
-    And I click "+ New Program"
-    Then I see the program creation form with fields: Program Name, Description
+    Then I see the heading "Programs" and subtitle "Manage academic programs and semesters"
+    And I see the "+ New Program" button
+    When I click "+ New Program"
+    Then I see the "New Program" modal with fields: Program Name, Description
+    And I see the "Show AI Generation Config" collapsible section
 ```
 
 ---
@@ -47,7 +116,7 @@ Feature: Create new academic program
 
 **Expected result**
 - Modal closes
-- Program list shows **Web Development 2026**
+- Program list refreshes and shows **Web Development 2026** with the description
 - No error message is displayed
 
 **Gherkin**
@@ -121,9 +190,41 @@ Feature: Create new academic program
 
 ---
 
+### TC-005 — AI Generation Config section expands to show optional fields
+
+**Priority:** Medium
+
+**Preconditions**
+- User is logged in as admin
+- User is on the program creation form
+
+**Steps**
+1. Observe the **▸ Show AI Generation Config** toggle (collapsed by default)
+2. Click the toggle to expand
+3. Observe the expanded fields and default values
+
+**Expected result**
+- Toggle label changes to **▾ Hide AI Generation Config** when expanded
+- Section shows: **Total Program Hours** (placeholder `e.g. 900`), **Default Session Hours** (default `4`), **Default Exam Hours** (default `3`), **Target Audience**, **Focus Areas**, **Sync/Async Ratio** slider (default **70% sync / 30% async**)
+- All AI fields are optional for program creation; **Total Program Hours** is required only for the separate **Generate Curriculum** feature
+- Program can still be created with only **Program Name** filled
+
+**Gherkin**
+```gherkin
+  Scenario: AI Generation Config section is collapsible
+    Given I am on the program creation form
+    When I click "Show AI Generation Config"
+    Then I see optional fields: Total Program Hours, Default Session Hours, Default Exam Hours, Target Audience, Focus Areas, Sync/Async Ratio
+    And Default Session Hours defaults to 4
+    And Default Exam Hours defaults to 3
+    And Sync/Async Ratio shows "70% sync / 30% async"
+```
+
+---
+
 ## Negative Flows
 
-### TC-005 — Program is not created when Program Name contains only whitespace
+### TC-006 — Program is not created when Program Name contains only whitespace
 
 **Priority:** High
 
@@ -137,10 +238,9 @@ Feature: Create new academic program
 3. Attempt to click **Create**
 
 **Expected result**
-- **Create** button remains disabled, or validation error is shown
+- **Create** button remains disabled (name is trimmed client-side; empty after trim)
 - Program is not created
 - Modal remains open
-- Program list does not show a new entry
 
 **Gherkin**
 ```gherkin
@@ -154,7 +254,7 @@ Feature: Create new academic program
 
 ---
 
-### TC-006 — Duplicate program name is not allowed
+### TC-007 — Duplicate program name is not allowed
 
 **Priority:** High
 
@@ -169,9 +269,9 @@ Feature: Create new academic program
 4. Click **Create**
 
 **Expected result**
-- Modal does not close (or closes with error feedback)
-- Validation or error message indicates duplicate program name
-- Program list still contains only one **Web Development 2026** entry
+- Modal remains open (or error feedback is shown)
+- Server returns 400/409; error message indicates duplicate name
+- Program list contains exactly one **Web Development 2026** entry
 
 **Gherkin**
 ```gherkin
@@ -187,9 +287,11 @@ Feature: Create new academic program
     And the program list contains exactly one "Web Development 2026"
 ```
 
+> **Verified 2026-09-06:** Duplicate names are rejected — modal stays open and only one row exists. (Previously tracked as [DS-13](https://legionqaschool.atlassian.net/browse/DS-13).)
+
 ---
 
-### TC-007 — Canceling the form does not create a program
+### TC-008 — Canceling the form does not create a program
 
 **Priority:** Medium
 
@@ -200,7 +302,7 @@ Feature: Create new academic program
 **Steps**
 1. Enter **Temporary Program** in **Program Name**
 2. Enter **Should not be saved** in **Description**
-3. Click **Cancel** or close the modal
+3. Click **Cancel**
 
 **Expected result**
 - Modal closes
@@ -219,28 +321,29 @@ Feature: Create new academic program
 
 ---
 
-### TC-008 — Non-admin user cannot access program creation
+### TC-009 — Non-admin user cannot access program creation
 
 **Priority:** High
 
 **Preconditions**
-- User is logged in as a non-admin role (e.g., instructor or viewer)
+- User is logged in as a viewer (non-admin/non-editor role)
 
 **Steps**
-1. Navigate to the Programs page
-2. Look for **+ New Program** control
+1. Navigate to `/programs`
+2. Look for **+ New Program** or **Create Program** controls
 
 **Expected result**
-- **+ New Program** button is hidden or disabled
+- **+ New Program** button is not visible
+- **Create Program** empty-state button is not visible
 - Program creation form is not accessible
-- No new program can be created
 
 **Gherkin**
 ```gherkin
   Scenario: Non-admin cannot create a program
-    Given I am logged in as a non-admin user
+    Given I am logged in as a viewer user
     When I navigate to the Programs page
     Then I do not see the "+ New Program" button
+    And I do not see the "Create Program" button
     And I cannot access the program creation form
 ```
 
@@ -248,7 +351,7 @@ Feature: Create new academic program
 
 ## Edge Cases
 
-### TC-009 — Program Name at minimum valid length (1 character)
+### TC-010 — Program Name at minimum valid length (1 character)
 
 **Priority:** Medium
 
@@ -278,7 +381,7 @@ Feature: Create new academic program
 
 ---
 
-### TC-010 — Program Name at maximum allowed length
+### TC-011 — Program Name at maximum allowed length (100 characters)
 
 **Priority:** Medium
 
@@ -287,28 +390,28 @@ Feature: Create new academic program
 - User is on the program creation form
 
 **Steps**
-1. Enter a **Program Name** of exactly 255 characters
+1. Enter a **Program Name** of exactly 100 characters
 2. Enter **Maximum length boundary test** in **Description**
 3. Click **Create**
 
 **Expected result**
 - Program is created successfully
-- Program list shows the 255-character name
+- Program list shows the 100-character name
 
 **Gherkin**
 ```gherkin
   Scenario: Maximum-length Program Name is accepted
     Given I am on the program creation form
-    When I fill in Program Name with a 255-character string
+    When I fill in Program Name with a 100-character string
     And I fill in Description with "Maximum length boundary test"
     And I click Create
     Then the modal closes
-    And the program list shows the 255-character program name
+    And the program list shows the 100-character program name
 ```
 
 ---
 
-### TC-011 — Program Name exceeding maximum length is rejected
+### TC-012 — Program Name exceeding maximum length is rejected
 
 **Priority:** Medium
 
@@ -317,12 +420,12 @@ Feature: Create new academic program
 - User is on the program creation form
 
 **Steps**
-1. Enter a **Program Name** of 256 characters
+1. Enter a **Program Name** of 101 characters
 2. Enter **Over max length test** in **Description**
-3. Attempt to click **Create**
+3. Click **Create**
 
 **Expected result**
-- Validation error is shown for **Program Name**
+- Server returns 400; error message is displayed
 - Program is not created
 - Modal remains open
 
@@ -330,16 +433,18 @@ Feature: Create new academic program
 ```gherkin
   Scenario: Program Name over maximum length is rejected
     Given I am on the program creation form
-    When I fill in Program Name with a 256-character string
+    When I fill in Program Name with a 101-character string
     And I fill in Description with "Over max length test"
     And I click Create
     Then I see a validation error for Program Name
     And the program list does not show the entered program name
 ```
 
+> **Verified 2026-09-06:** Names over 100 characters are rejected — modal stays open and program is not listed. (Previously tracked as [DS-78](https://legionqaschool.atlassian.net/browse/DS-78).)
+
 ---
 
-### TC-012 — Special characters in Program Name are handled correctly
+### TC-013 — Special characters in Program Name are handled correctly
 
 **Priority:** Medium
 
@@ -369,7 +474,7 @@ Feature: Create new academic program
 
 ---
 
-### TC-013 — Unicode and emoji in Program Name are handled correctly
+### TC-014 — Unicode and emoji in Program Name are handled correctly
 
 **Priority:** Low
 
@@ -399,7 +504,7 @@ Feature: Create new academic program
 
 ---
 
-### TC-014 — Leading and trailing spaces in Program Name are trimmed
+### TC-015 — Leading and trailing spaces in Program Name are trimmed
 
 **Priority:** Medium
 
@@ -429,7 +534,7 @@ Feature: Create new academic program
 
 ---
 
-### TC-015 — Very long Description is handled correctly
+### TC-016 — Description at maximum allowed length (500 characters) is accepted
 
 **Priority:** Low
 
@@ -439,22 +544,168 @@ Feature: Create new academic program
 
 **Steps**
 1. Enter **Cybersecurity Bootcamp** in **Program Name**
-2. Enter a **Description** of 2000 characters
+2. Enter a **Description** of exactly 500 characters
 3. Click **Create**
 
 **Expected result**
-- If within limit: program is created and description is stored
-- If over limit: validation error is shown and program is not created
+- Program is created successfully
+- Program list shows **Cybersecurity Bootcamp**
 
 **Gherkin**
 ```gherkin
-  Scenario: Long Description is handled per field limits
+  Scenario: Description at maximum length is accepted
     Given I am on the program creation form
     When I fill in Program Name with "Cybersecurity Bootcamp"
-    And I fill in Description with a 2000-character string
+    And I fill in Description with a 500-character string
     And I click Create
-    Then either the modal closes and the program list shows "Cybersecurity Bootcamp"
-    Or I see a validation error for Description
+    Then the modal closes
+    And the program list shows "Cybersecurity Bootcamp"
+```
+
+---
+
+### TC-017 — Description exceeding maximum length (501 characters) is rejected
+
+**Priority:** Low
+
+**Preconditions**
+- User is logged in as admin
+- User is on the program creation form
+
+**Steps**
+1. Enter **Cybersecurity Bootcamp** in **Program Name**
+2. Enter a **Description** of 501 characters
+3. Click **Create**
+
+**Expected result**
+- Server returns 400; error message is displayed
+- Program is not created
+- Modal remains open
+
+**Gherkin**
+```gherkin
+  Scenario: Description over maximum length is rejected
+    Given I am on the program creation form
+    When I fill in Program Name with "Cybersecurity Bootcamp"
+    And I fill in Description with a 501-character string
+    And I click Create
+    Then I see a validation error for Description
+    And the program list does not show "Cybersecurity Bootcamp"
+```
+
+---
+
+### TC-018 — Double-clicking Create creates only one program
+
+**Priority:** Medium
+
+**Preconditions**
+- User is logged in as admin
+- User is on the program creation form
+
+**Steps**
+1. Enter a unique **Program Name**
+2. Double-click **Create**
+
+**Expected result**
+- Exactly one program with that name appears in the list
+- Modal closes after the first successful create
+
+**Gherkin**
+```gherkin
+  Scenario: Double-click Create is idempotent
+    Given I am on the program creation form
+    When I fill in Program Name with a unique name
+    And I double-click Create
+    Then the program list contains exactly one program with that name
+```
+
+> **Known app defect ([DS-110](https://legionqaschool.atlassian.net/browse/DS-110)):** Double-clicking Create currently creates duplicate programs (verified 2026-09-06).
+
+---
+
+### TC-019 — Create button re-disables when Program Name is cleared
+
+**Priority:** Medium
+
+**Preconditions**
+- User is logged in as admin
+- User is on the program creation form
+
+**Steps**
+1. Enter **Temporary Name** in **Program Name**
+2. Verify **Create** becomes enabled
+3. Clear **Program Name**
+4. Observe **Create** button state
+
+**Expected result**
+- **Create** button is disabled again after the name field is cleared
+
+**Gherkin**
+```gherkin
+  Scenario: Create button disables when Program Name is cleared
+    Given I am on the program creation form
+    When I fill in Program Name with "Temporary Name"
+    Then the Create button is enabled
+    When I clear the Program Name field
+    Then the Create button is disabled
+```
+
+---
+
+### TC-020 — Modal closes via X button without saving
+
+**Priority:** Medium
+
+**Preconditions**
+- User is logged in as admin
+- User is on the program creation form
+
+**Steps**
+1. Enter **Unsaved Via X** in **Program Name**
+2. Press **Escape** or click the modal **X** (close) button
+
+**Expected result**
+- Modal closes
+- **Unsaved Via X** does not appear in the program list
+
+**Gherkin**
+```gherkin
+  Scenario: Closing modal via X does not persist program
+    Given I am on the program creation form
+    When I fill in Program Name with "Unsaved Via X"
+    And I close the modal with Escape or the close button
+    Then the modal closes
+    And the program list does not show "Unsaved Via X"
+```
+
+---
+
+### TC-021 — Program row shows edit and delete actions with accessible names
+
+**Priority:** Low
+
+**Preconditions**
+- User is logged in as admin
+- At least one program exists in the list
+
+**Steps**
+1. Navigate to `/programs`
+2. Locate a program row (e.g. **Web Development 2026**)
+3. Inspect action buttons on the row
+
+**Expected result**
+- Row shows **Edit {program name}** and **Delete {program name}** buttons
+- Clicking a row selects it for the semester panel
+
+**Gherkin**
+```gherkin
+  Scenario: Program rows expose edit and delete actions
+    Given I am logged in as admin
+    And the program list contains "Web Development 2026"
+    When I navigate to the Programs page
+    Then I see an "Edit Web Development 2026" button
+    And I see a "Delete Web Development 2026" button
 ```
 
 ---
@@ -469,26 +720,30 @@ Feature: Create new academic program
 
 | Category | Test IDs | Count |
 |---|---|---|
-| Positive flows | TC-001 – TC-004 | 4 |
-| Negative flows | TC-005 – TC-008 | 4 |
-| Edge cases | TC-009 – TC-015 | 7 |
-| **Total** | | **15** |
+| Positive flows | TC-001 – TC-005 | 5 |
+| Negative flows | TC-006 – TC-009 | 4 |
+| Edge cases | TC-010 – TC-021 | 12 |
+| **Total** | | **21** |
 
 ---
 
 ## Ambiguities and Gaps in Acceptance Criteria
 
-1. **Description required?** ACs only validate empty **Program Name**; **Description** optionality is unclear.
-2. **Max length not specified** for **Program Name** or **Description**.
-3. **Whitespace handling** — behavior for whitespace-only **Program Name** is undefined.
-4. **Duplicate names** — no rule on whether duplicate **Program Name** values are allowed.
-5. **Trim behavior** — unclear if leading/trailing spaces are trimmed before save.
-6. **Case sensitivity** — unclear if names differing only by case are duplicates.
-7. **Cancel / close behavior** — no AC for dismissing the modal without saving.
-8. **Success feedback** — no toast, banner, or inline confirmation specified beyond list update.
-9. **List sort/order** — unclear where the new program appears in the list.
-10. **Permissions** — AC assumes admin only; other roles not defined.
-11. **Special characters / Unicode** — no guidance on allowed character sets.
-12. **Network/server errors** — no AC for failed **Create** due to API or server error.
-13. **Concurrent creation** — no AC for simultaneous duplicate creation by two admins.
-14. **Automation selectors** — exact `data-testid` or `aria-label` values not specified.
+1. **Description required?** Resolved via Confluence — optional (max 500 characters).
+2. **Max length** — Resolved via Confluence — Program Name max 100, Description max 500 (not in Jira ACs).
+3. **Whitespace handling** — Resolved via Confluence — trimmed on submit; whitespace-only names blocked by disabled Create button.
+4. **Duplicate names** — Resolved via Confluence — rejected server-side (400/409); not covered in Jira ACs.
+5. **Permissions** — Resolved via Confluence — ADMIN and EDITOR can create; VIEWER cannot (Jira AC assumes admin only).
+6. **AI Generation Config** — Optional collapsible fields not mentioned in Jira ACs; UI label is **Total Program Hours** (Confluence calls it **Total Hours**).
+7. **Empty state** — When no programs exist, a **Create Program** button also appears (in addition to **+ New Program** in header).
+8. **Success feedback** — No toast specified; list refresh is the confirmation signal per Confluence UI Behavior.
+9. **Double-click idempotency** — Not in Jira ACs; observed as defect in live app ([DS-110](https://legionqaschool.atlassian.net/browse/DS-110)).
+10. **Case sensitivity for duplicates** — Still undefined in docs.
+11. **Description max-length UI** — No client-side maxlength on Description textarea; server rejects 501+ chars.
+
+## Known App Defects (Live Exploration — 2026-09-07)
+
+| Defect | Observed behavior | Jira sub-task |
+|---|---|---|
+| Single Create adds multiple programs | AC-2: 1 click → 3 rows with exact Jira name/description | [DS-216](https://legionqaschool.atlassian.net/browse/DS-216) |
+| Double-click Create creates duplicates | TC-018: dblclick → 2 rows | [DS-217](https://legionqaschool.atlassian.net/browse/DS-217) |
